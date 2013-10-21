@@ -256,7 +256,7 @@ class httpclient {
 				$this->recv .= self::fread_my($fp,$pack_len);
 				fgets($fp);//读取\r\n
 			}
-			//fgets($fp);//读取\r\n
+			fgets($fp);//读取\r\n
 			return;
 		}
 		
@@ -298,7 +298,7 @@ class httpclient {
 	private function process_header(){
 		$http_headers = explode("\r\n",$this->header);
 		
-		preg_match('|HTTP/1.[10]\s*([0-9]{1,3})\s*(.*)$|i',$http_headers[0],$match);
+		preg_match('|HTTP/1.[10]\s*([0-9]{3})\s*(.*)$|i',$http_headers[0],$match);
 		$this->status = (int)$match[1];
 		unset($http_headers[0]);
 		
@@ -379,12 +379,18 @@ class httpclient {
 			
 			//32位机时间戳溢出修正
 			if(preg_match('|\d{2}-[a-z]{3,4}-(\d*)|i',$expires,$match)){
-				if($match[1] >= 38 && $match[1] < 100) $expires = '2038-01-01';
+				if($match[1] >= 38 && $match[1] < 100){
+					$expires = '2038-01-01';
+				}else{
+					$expires = pow(2,31);
+				}
+			}else{
+				$expires = strtotime($expires);
 			}
 		}else{
-			$expires = '2038-01-18';
+			$expires = pow(2,31);
 		}
-		$expires = strtotime($expires);
+		
 		$this->_set_cookie($name,$value,$expires,$path,$domain,$hostonly);
 	}
 	
