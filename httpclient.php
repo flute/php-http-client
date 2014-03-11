@@ -195,7 +195,7 @@ class httpclient {
 		else
 			$fp = fsockopen('ssl://'.$ui['host'],$ui['port'],$errno,$errstr,$this->timeout);
 					
-		
+		stream_set_timeout($fp,$this->timeout);
 		if(!$fp) $this->error = $errno.':'.$errstr;
 		return $fp;
 	}
@@ -239,11 +239,18 @@ class httpclient {
 	
 	public static function fread_my($fp,$length){
 		$data = '';
-		
-		while( strlen($data) < $length && !feof($fp) )
+		while( strlen($data) < $length && !feof($fp) ) {
+			$meta_data = stream_get_meta_data($fp);
+			if ( $meta_data['timed_out'] ) {
+				if ( $this->debug ) {
+					$this->debug("连接超时","timeout");
+				}
+				break;
+			}
 			$data .= fread($fp, $length - strlen($data));
+		}
 		
-		return $data;
+		return array('data'=>$data,'timeout'=>$meta_data['timed_out']);
 	}
 	
 	private function receive_data($fp){
@@ -253,7 +260,9 @@ class httpclient {
 		//chunk模式
 		if(preg_match('|transfer-encoding:\s*?chunked|i',$this->header)){
 			while( !feof($fp) && ($pack_len = hexdec(fgets($fp))) ) {
-				$this->recv .= self::fread_my($fp,$pack_len);
+				$data = self::fread_my($fp,$pack_len);
+				$this->recv .= $data['data'];
+				if ( $data['timeout'] ) break;
 				fgets($fp);//读取\r\n
 			}
 			fgets($fp);//读取\r\n
@@ -266,7 +275,8 @@ class httpclient {
 	 		if(preg_match('|content-length:\s*?([0-9]{1,})|i',$this->header,$length)){
 				$length=(int)$length[1];
 				$this->length = $length;
-				$this->recv = self::fread_my($fp, $length);
+				$data = self::fread_my($fp, $length);
+				$this->recv = $data['data'];
 				return;
 			}else if(preg_match('|Connection:\s*?Close|i',$this->header)){
 				//服务器强制使用close方式
@@ -379,18 +389,12 @@ class httpclient {
 			
 			//32位机时间戳溢出修正
 			if(preg_match('|\d{2}-[a-z]{3,4}-(\d*)|i',$expires,$match)){
-				if($match[1] >= 38 && $match[1] < 100){
-					$expires = '2038-01-01';
-				}else{
-					$expires = pow(2,31);
-				}
-			}else{
-				$expires = strtotime($expires);
+				if($match[1] >= 38 && $match[1] < 100) $expires = '2038-01-18';
 			}
 		}else{
-			$expires = pow(2,31);
+			$expires = '2038-01-18';
 		}
-		
+		$expires = strtotime($expires);
 		$this->_set_cookie($name,$value,$expires,$path,$domain,$hostonly);
 	}
 	
